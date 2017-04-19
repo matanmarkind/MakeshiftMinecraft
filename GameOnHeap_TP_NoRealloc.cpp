@@ -12,14 +12,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
-#include <random>
 #include <thread>
 #include <cmath>
 #include <string>
-#include <vector>
 #include <array>
-#include <atomic>
 #include <matan/ThreadPool.hh>
+#include <matan/memory.hh>
 
 using namespace std;
 using namespace std::chrono;
@@ -76,44 +74,54 @@ public:
           visible(visible){}
 };
 
-
 class Entity {
 public:
-  std::string name;
+  enum class Type { Zombie,Chicken,Exploder,TallCreepyThing };
+
+  Vector m_location;
+  const char* name;
   Vector speed;
   int health;
-  Vector location;
 
-  static constexpr int NUM_TYPES = 4;
-  enum class Type { Zombie,Chicken,Exploder,TallCreepyThing };
   Entity(Vector, Type);
   Entity() = default;
   ~Entity() = default;
   void updatePosition();
+  static const char* get_name(Type type);
 };
 
-Entity::Entity (Vector location,Type type) {
-  this->location = location;
-
+const char* Entity::get_name(Type type) {
   switch(type)
   {
     case Type::Zombie:
-      name = "Zombie";
+      return "Zombie";
+    case Type::Chicken:
+      return"Chicken";
+    case Type::Exploder:
+      return "Exploder";
+    case Type::TallCreepyThing:
+      return "Tall Creepy Thing";
+  }
+}
+
+Entity::Entity (Vector location,Type type) :
+    m_location(location),
+    name(Entity::get_name(type)) {
+  switch(type)
+  {
+    case Type::Zombie:
       health = 50;
       speed = Vector(0.5,0.0,0.5);
       break;
     case Type::Chicken:
-      name = "Checking";
       health = 25;
       speed = Vector(0.75,0.25,0.75);
       break;
     case Type::Exploder:
-      name = "Exploder";
       health = 75;
       speed = Vector(0.75,0.0,0.75);
       break;
     case Type::TallCreepyThing:
-      name ="Tall Creepy Thing";
       health = 500;
       speed = Vector(1.0,1.0,1.0);
       break;
@@ -121,21 +129,17 @@ Entity::Entity (Vector location,Type type) {
 }
 
 void Entity::updatePosition() {
-  new (&location) Vector(location.x + 1.0f * speed.x,
-                         location.y + 1.0f * speed.y,
-                         location.z + 1.0f * speed.z);
+  m_location.x = m_location.x + 1.0f * speed.x;
+  m_location.y = m_location.y + 1.0f * speed.y;
+  m_location.z = m_location.z + 1.0f * speed.z;
 }
 
-
 class Chunk {
-  static constexpr int NUM_BLOCKS = 65536;
-  static constexpr int NUM_ENTITIES = 1000;
-
 public:
-  std::array<unsigned char, NUM_BLOCKS> blocks;
-  std::vector<Entity> entities;
-
+  std::array<unsigned char, 65536> blocks;
+  std::array<Entity, 1000> entities;
   Vector location;
+
   Chunk(Vector);
   Chunk() = default;
   ~Chunk() = default;
@@ -144,27 +148,23 @@ public:
 
 Chunk::Chunk(Vector location) {
   this->location = location;
-  for (int i = 0; i < NUM_BLOCKS; i+=4) {
+  for (int i = 0; i < blocks.size(); i+=4) {
     blocks[i] = i%256;
     blocks[i+1] = (i+1)%256;
     blocks[i+2] = (i+2)%256;
     blocks[i+3] = (i+3)%256;
   }
 
-  entities.reserve(NUM_ENTITIES);
-  //I have much slower load times when using the pragma here
-  // but you can just uncomment it and the loop is ready for parallelism
-//#pragma omp parallel for
-  for (int i = 0; i < NUM_ENTITIES; i+=4) {
-    new (&entities[i]) Entity(Vector(i,i,i), Entity::Type::Zombie);
-    new (&entities[i+1]) Entity(Vector(i+1,i+1,i+1), Entity::Type::Chicken);
-    new (&entities[i+2]) Entity(Vector(i+2,i+2,i+2), Entity::Type::Exploder);
-    new (&entities[i+3]) Entity(Vector(i+3,i+3,i+3), Entity::Type::TallCreepyThing);
+  for (int i = 0; i < entities.size(); i+=4) {
+    matan::place(&entities[i], Vector(i,i,i), Entity::Type::Zombie);
+    matan::place(&entities[i+1], Vector(i+1,i+1,i+1), Entity::Type::Chicken);
+    matan::place(&entities[i+2], Vector(i+2,i+2,i+2), Entity::Type::Exploder);
+    matan::place(&entities[i+3], Vector(i+3,i+3,i+3), Entity::Type::TallCreepyThing);
   }
 }
 
 void Chunk::processEntities() {
-  for (int i = 0; i < NUM_ENTITIES; i+=4) {
+  for (int i = 0; i < entities.size(); i+=4) {
     entities[i].updatePosition();
     entities[i+1].updatePosition();
     entities[i+2].updatePosition();
@@ -174,10 +174,9 @@ void Chunk::processEntities() {
 
 class Game {
 public:
-  static constexpr int BLOCK_COUNT = 256;
   static constexpr int CHUNK_COUNT = 100;
-  std::vector<Block> blocks;
-  std::vector<Chunk> chunks;
+  std::array<Block, 256> blocks;
+  std::array<Chunk, CHUNK_COUNT> chunks;
   Vector playerLocation;
   std::atomic_uint chunkCounter;
   matan::ThreadPool m_threadPool;
@@ -192,24 +191,22 @@ public:
 Game::Game() :
     playerLocation({0, 0, 0}),
     m_threadPool(2) {
-  blocks.reserve(BLOCK_COUNT);
-  for (int i = 0; i < BLOCK_COUNT; i+=4) {
-    blocks.emplace_back("Block" + std::to_string(i), Vector(i,i,i), i, 100, 1, 1, true, true);
-    blocks.emplace_back("Block" + std::to_string(i+1), Vector(i+1,i+1,i+1), i+1, 100, 1, 1, true, true);
-    blocks.emplace_back("Block" + std::to_string(i+2), Vector(i+2,i+2,i+2), i+2, 100, 1, 1, true, true);
-    blocks.emplace_back("Block" + std::to_string(i+3), Vector(i+3,i+3,i+3), i+3, 100, 1, 1, true, true);
+  for (int i = 0; i < blocks.size(); i+=4) {
+    matan::place(&blocks[i], "Block" + std::to_string(i), Vector(i,i,i), i, 100, 1, 1, true, true);
+    matan::place(&blocks[i+1], "Block" + std::to_string(i+1), Vector(i+1,i+1,i+1), i+1, 100, 1, 1, true, true);
+    matan::place(&blocks[i+2], "Block" + std::to_string(i+2), Vector(i+2,i+2,i+2), i+2, 100, 1, 1, true, true);
+    matan::place(&blocks[i+3], "Block" + std::to_string(i+3), Vector(i+3,i+3,i+3), i+3, 100, 1, 1, true, true);
   }
 
   chunkCounter = 0;
 }
 
 void Game::loadWorld() {
-  chunks.reserve(CHUNK_COUNT);
-  for (int i = 0; i < CHUNK_COUNT;i+=4) {
-    new (&chunks[i]) Chunk(Vector(chunkCounter++, 0.0, 0.0));
-    new (&chunks[i+1]) Chunk(Vector(chunkCounter++, 0.0, 0.0));
-    new (&chunks[i+2]) Chunk(Vector(chunkCounter++, 0.0, 0.0));
-    new (&chunks[i+3]) Chunk(Vector(chunkCounter++, 0.0, 0.0));
+  for (int i = 0; i < chunks.size(); i+=4) {
+    matan::place(&chunks[i], Vector(chunkCounter++, 0.0, 0.0));
+    matan::place(&chunks[i+1], Vector(chunkCounter++, 0.0, 0.0));
+    matan::place(&chunks[i+2], Vector(chunkCounter++, 0.0, 0.0));
+    matan::place(&chunks[i+3], Vector(chunkCounter++, 0.0, 0.0));
   }
 }
 
@@ -217,15 +214,13 @@ void Game::update(Chunk& chunk,
                   const Vector playerLocation,
                   int chunkCounter) {
   chunk.processEntities();
-  float chunkDistance = Vector::getDistance(chunk.location, playerLocation);
-  if (chunkDistance > CHUNK_COUNT) {
-    chunk.~Chunk();
-    new (&chunk) Chunk(Vector(chunkCounter,0.0,0.0));
+  if (Vector::getDistance(chunk.location, playerLocation) > CHUNK_COUNT) {
+    matan::replace(&chunk, Vector(chunkCounter, 0, 0));
   }
 }
 
 void Game::updateChunks() {
-  for (int i = 0; i < CHUNK_COUNT; i+=4) {
+  for (int i = 0; i < chunks.size(); i+=4) {
     m_threadPool.enqueue(Game::update, chunks[i], playerLocation, chunkCounter++);
     m_threadPool.enqueue(Game::update, chunks[i+1], playerLocation, chunkCounter++);
     m_threadPool.enqueue(Game::update, chunks[i+2], playerLocation, chunkCounter++);
@@ -246,16 +241,14 @@ int main(int argc, char* argv[]) {
   end = high_resolution_clock::now();
   auto duration = duration_cast<milliseconds>(end-start).count();
   printf("load time:%lu\n",duration);
-  //spin
+
   int i = 0;
   double dur = 0;
+  const Vector playerMovement = Vector(0.1,0.0,0.0);
   while(1) {
     start = high_resolution_clock::now();
-    Vector playerMovement = Vector(0.1,0.0,0.0);
-
     game->playerLocation = Vector::add(playerMovement,game->playerLocation);
     game->updateChunks();
-
     end = high_resolution_clock::now();
 
     dur += (duration_cast<nanoseconds>(end-start).count() / 1000000.0);

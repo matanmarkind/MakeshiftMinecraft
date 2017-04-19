@@ -8,15 +8,15 @@
  * Code directly based on https://gist.github.com/jcelerier/f6b666041162eb221bfca441eccb0ee7
  */
 
+
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
-#include <random>
 #include <cmath>
 #include <string>
-#include <vector>
 #include <array>
-#include <atomic>
+#include <matan/ThreadPool.hh>
+#include <matan/memory.hh>
 
 using namespace std;
 using namespace std::chrono;
@@ -25,7 +25,6 @@ class Vector {
 public:
   float x, y, z;
   Vector() = default;
-  ~Vector() = default;
   Vector(float x_, float y_, float z_): x(x_), y(y_), z(z_) { }
 
   static Vector add(const Vector a, const Vector b) {
@@ -47,7 +46,7 @@ public:
 class Block {
 public:
   std::string name;
-  Vector m_location;
+  Vector location;
   int durability;
   int textureid;
   int type;
@@ -65,22 +64,19 @@ public:
         bool breakable,
         bool visible):
           name(std::move(n)),
-          m_location(location),
+          location(location),
           durability(durability),
           textureid(textureid),
           type(type),
           id(id),
           breakable(breakable),
           visible(visible){}
-  ~Block() = default;
 };
-
 
 class Entity {
 public:
   enum class Type { Zombie,Chicken,Exploder,TallCreepyThing };
 
-  static constexpr int NUM_TYPES = 4;
   Vector m_location;
   const char* name;
   Vector speed;
@@ -137,15 +133,11 @@ void Entity::updatePosition() {
   m_location.z = m_location.z + 1.0f * speed.z;
 }
 
-
 class Chunk {
-  static constexpr int NUM_BLOCKS = 65536;
-  static constexpr int NUM_ENTITIES = 1000;
-
 public:
-  std::vector<unsigned char> m_blocks;
-  std::vector<Entity> entities;
-  Vector m_location;
+  std::array<unsigned char, 65536> blocks;
+  std::array<Entity, 1000> entities;
+  Vector location;
 
   Chunk(Vector);
   Chunk() = default;
@@ -154,32 +146,24 @@ public:
 };
 
 Chunk::Chunk(Vector location) {
-  m_location = location;
-  m_blocks.reserve(NUM_BLOCKS);
-  for (int i = 0; i < NUM_BLOCKS; i++) {
-    m_blocks.push_back(i%256);
-  }
-  /*
-  for (int i = 0; i < NUM_BLOCKS; i+=4) {
+  this->location = location;
+  for (int i = 0; i < blocks.size(); i+=4) {
     blocks[i] = i%256;
     blocks[i+1] = (i+1)%256;
     blocks[i+2] = (i+2)%256;
     blocks[i+3] = (i+3)%256;
   }
-  */
 
-  entities.reserve(NUM_ENTITIES);
-  const auto beg = entities.begin();
-  for (int i = 0; i < NUM_ENTITIES; i+=4) {
-    entities.emplace(beg+i, Vector(i,i,i), Entity::Type::Zombie);
-    entities.emplace(beg+i+1, Vector(i+1,i+1,i+1), Entity::Type::Chicken);
-    entities.emplace(beg+i+2, Vector(i+2,i+2,i+2), Entity::Type::Exploder);
-    entities.emplace(beg+i+3, Vector(i+3,i+3,i+3), Entity::Type::TallCreepyThing);
+  for (int i = 0; i < entities.size(); i+=4) {
+    matan::place(&entities[i], Vector(i,i,i), Entity::Type::Zombie);
+    matan::place(&entities[i+1], Vector(i+1,i+1,i+1), Entity::Type::Chicken);
+    matan::place(&entities[i+2], Vector(i+2,i+2,i+2), Entity::Type::Exploder);
+    matan::place(&entities[i+3], Vector(i+3,i+3,i+3), Entity::Type::TallCreepyThing);
   }
 }
 
 void Chunk::processEntities() {
-  for (int i = 0; i < NUM_ENTITIES; i+=4) {
+  for (int i = 0; i < entities.size(); i+=4) {
     entities[i].updatePosition();
     entities[i+1].updatePosition();
     entities[i+2].updatePosition();
@@ -189,13 +173,11 @@ void Chunk::processEntities() {
 
 class Game {
 public:
-  static constexpr int BLOCKS_COUNT = 256;
-  static constexpr int CHUNKS_COUNT = 100;
-  Block m_blocks[BLOCKS_COUNT];
-  Chunk m_chunks[CHUNKS_COUNT];
+  static constexpr int CHUNK_COUNT = 100;
+  std::array<Block, 256> blocks;
+  std::array<Chunk, CHUNK_COUNT> chunks;
   Vector playerLocation;
-  int m_chunkCounter;
-
+  std::atomic_uint chunkCounter;
   Game();
   void loadWorld();
   void updateChunks();
@@ -206,22 +188,22 @@ public:
 
 Game::Game() :
     playerLocation({0, 0, 0}) {
-  for (int i = 0; i < BLOCKS_COUNT; i+=4) {
-    new (m_blocks+i) Block("Block" + std::to_string(i), Vector(i,i,i), i, 100, 1, 1, true, true);
-    new (m_blocks+i+1) Block("Block" + std::to_string(i+1), Vector(i+1,i+1,i+1), i+1, 100, 1, 1, true, true);
-    new (m_blocks+i+2) Block("Block" + std::to_string(i+2), Vector(i+2,i+2,i+2), i+2, 100, 1, 1, true, true);
-    new (m_blocks+i+3) Block("Block" + std::to_string(i+3), Vector(i+3,i+3,i+3), i+3, 100, 1, 1, true, true);
+  for (int i = 0; i < blocks.size(); i+=4) {
+    matan::place(&blocks[i], "Block" + std::to_string(i), Vector(i,i,i), i, 100, 1, 1, true, true);
+    matan::place(&blocks[i+1], "Block" + std::to_string(i+1), Vector(i+1,i+1,i+1), i+1, 100, 1, 1, true, true);
+    matan::place(&blocks[i+2], "Block" + std::to_string(i+2), Vector(i+2,i+2,i+2), i+2, 100, 1, 1, true, true);
+    matan::place(&blocks[i+3], "Block" + std::to_string(i+3), Vector(i+3,i+3,i+3), i+3, 100, 1, 1, true, true);
   }
 
-  m_chunkCounter = 0;
+  chunkCounter = 0;
 }
 
 void Game::loadWorld() {
-  for (int i = 0; i < CHUNKS_COUNT; i+=4) {
-    new (m_chunks+i) Chunk(Vector(m_chunkCounter++, 0.0, 0.0));
-    new (m_chunks+i+1) Chunk(Vector(m_chunkCounter++, 0.0, 0.0));
-    new (m_chunks+i+2) Chunk(Vector(m_chunkCounter++, 0.0, 0.0));
-    new (m_chunks+i+3) Chunk(Vector(m_chunkCounter++, 0.0, 0.0));
+  for (int i = 0; i < chunks.size(); i+=4) {
+    matan::place(&chunks[i], Vector(chunkCounter++, 0.0, 0.0));
+    matan::place(&chunks[i+1], Vector(chunkCounter++, 0.0, 0.0));
+    matan::place(&chunks[i+2], Vector(chunkCounter++, 0.0, 0.0));
+    matan::place(&chunks[i+3], Vector(chunkCounter++, 0.0, 0.0));
   }
 }
 
@@ -229,29 +211,29 @@ void Game::update(Chunk& chunk,
                   const Vector playerLocation,
                   int chunkCounter) {
   chunk.processEntities();
-  float chunkDistance = Vector::getDistance(chunk.m_location, playerLocation);
-  if (chunkDistance > CHUNKS_COUNT) {
-    chunk.~Chunk();
-    new (&chunk) Chunk(Vector(chunkCounter,0.0,0.0));
-    //chunk = Chunk(Vector(chunkCounter,0.0,0.0));
+  if (Vector::getDistance(chunk.location, playerLocation) > CHUNK_COUNT) {
+    matan::replace(&chunk, Vector(chunkCounter, 0, 0));
   }
 }
 
 void Game::updateChunks() {
-  for (int i = 0; i < CHUNKS_COUNT; i++) {
-    update(m_chunks[i], playerLocation, m_chunkCounter++);
+  for (int i = 0; i < chunks.size(); i+=4) {
+    update(chunks[i], playerLocation, chunkCounter++);
+    update(chunks[i+1], playerLocation, chunkCounter++);
+    update(chunks[i+2], playerLocation, chunkCounter++);
+    update(chunks[i+3], playerLocation, chunkCounter++);
   }
 }
 
 int main(int argc, char* argv[]) {
-  Game game;
+  auto game = new Game;
   printf("%lu\n", sizeof(Game));
   high_resolution_clock::time_point start;
   high_resolution_clock::time_point end;
 
   printf("loading world...\n");
   start = high_resolution_clock::now();
-  game.loadWorld();
+  game->loadWorld();
   end = high_resolution_clock::now();
   auto duration = duration_cast<milliseconds>(end-start).count();
   printf("load time:%lu\n",duration);
@@ -262,14 +244,14 @@ int main(int argc, char* argv[]) {
     start = high_resolution_clock::now();
     Vector playerMovement = Vector(0.1,0.0,0.0);
 
-    game.playerLocation = Vector::add(playerMovement, game.playerLocation);
-    game.updateChunks();
+    game->playerLocation = Vector::add(playerMovement,game->playerLocation);
+    game->updateChunks();
 
     end = high_resolution_clock::now();
 
     dur += (duration_cast<nanoseconds>(end-start).count() / 1000000.0);
-
-    if ((++i)%1000 == 0)
+    if ((++i)%1000 == 0) {
       printf("%f\n", dur/(double)i);
+    }
   }
 }
