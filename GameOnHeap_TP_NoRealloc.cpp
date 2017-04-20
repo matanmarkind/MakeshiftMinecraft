@@ -141,13 +141,24 @@ public:
   Vector location;
 
   Chunk(Vector);
+  Chunk(float x, float y, float z);
   Chunk() = default;
   ~Chunk() = default;
+  void init();
   void processEntities();
 };
 
-Chunk::Chunk(Vector location) {
-  this->location = location;
+Chunk::Chunk(Vector loc) :
+  location(loc) {
+  init();
+}
+
+Chunk::Chunk(float x, float y, float z) :
+  location(x, y, z) {
+  init();
+}
+
+void Chunk::init() {
   for (int i = 0; i < blocks.size(); i+=4) {
     blocks[i] = i%256;
     blocks[i+1] = (i+1)%256;
@@ -185,7 +196,7 @@ public:
   void updateChunks();
   static void update(Chunk& chunk,
                      const Vector playerLocation,
-                     int chunkCounter);
+                     std::atomic_uint& chunkCounter);
 };
 
 Game::Game() :
@@ -212,19 +223,19 @@ void Game::loadWorld() {
 
 void Game::update(Chunk& chunk,
                   const Vector playerLocation,
-                  int chunkCounter) {
+                  std::atomic_uint& chunkCounter) {
   chunk.processEntities();
   if (Vector::getDistance(chunk.location, playerLocation) > CHUNK_COUNT) {
-    matan::replace(&chunk, Vector(chunkCounter, 0, 0));
+    matan::replace(&chunk, chunkCounter++, 0, 0);
   }
 }
 
 void Game::updateChunks() {
   for (int i = 0; i < chunks.size(); i+=4) {
-    m_threadPool.enqueue(Game::update, chunks[i], playerLocation, chunkCounter++);
-    m_threadPool.enqueue(Game::update, chunks[i+1], playerLocation, chunkCounter++);
-    m_threadPool.enqueue(Game::update, chunks[i+2], playerLocation, chunkCounter++);
-    m_threadPool.enqueue(Game::update, chunks[i+3], playerLocation, chunkCounter++);
+    m_threadPool.enqueue(Game::update, chunks[i], playerLocation, chunkCounter);
+    m_threadPool.enqueue(Game::update, chunks[i+1], playerLocation, chunkCounter);
+    m_threadPool.enqueue(Game::update, chunks[i+2], playerLocation, chunkCounter);
+    m_threadPool.enqueue(Game::update, chunks[i+3], playerLocation, chunkCounter);
   }
   m_threadPool.waitFinished();
 }
@@ -247,7 +258,7 @@ int main(int argc, char* argv[]) {
   const Vector playerMovement = Vector(0.1,0.0,0.0);
   while(1) {
     start = high_resolution_clock::now();
-    game->playerLocation = Vector::add(playerMovement,game->playerLocation);
+    game->playerLocation = Vector::add(playerMovement, game->playerLocation);
     game->updateChunks();
     end = high_resolution_clock::now();
 

@@ -215,8 +215,7 @@ void Game::update(Chunk& chunk,
                   const Vector playerLocation,
                   std::atomic_uint& chunkCounter) {
   chunk.processEntities();
-  float chunkDistance = Vector::getDistance(chunk.location, playerLocation);
-  if (chunkDistance > CHUNK_COUNT) {
+  if (Vector::getDistance(chunk.location, playerLocation) > CHUNK_COUNT) {
     chunk.~Chunk();
     new (&chunk) Chunk(Vector(chunkCounter++,0.0,0.0));
   }
@@ -247,13 +246,11 @@ int main(int argc, char* argv[]) {
   //spin
   int i = 0;
   double dur = 0;
+  Vector playerMovement = Vector(0.1,0.0,0.0);
   while(1) {
     start = high_resolution_clock::now();
-    Vector playerMovement = Vector(0.1,0.0,0.0);
-
-    game->playerLocation = Vector::add(playerMovement,game->playerLocation);
+    game->playerLocation = Vector::add(playerMovement, game->playerLocation);
     game->updateChunks();
-
     end = high_resolution_clock::now();
 
     dur += (duration_cast<nanoseconds>(end-start).count() / 1000000.0);
