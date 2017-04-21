@@ -201,7 +201,7 @@ public:
 
 Game::Game() :
     playerLocation({0, 0, 0}),
-    m_threadPool(2) {
+    m_threadPool() {
   for (int i = 0; i < blocks.size(); i+=4) {
     matan::place(&blocks[i], "Block" + std::to_string(i), Vector(i,i,i), i, 100, 1, 1, true, true);
     matan::place(&blocks[i+1], "Block" + std::to_string(i+1), Vector(i+1,i+1,i+1), i+1, 100, 1, 1, true, true);
