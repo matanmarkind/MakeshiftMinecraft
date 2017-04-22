@@ -79,8 +79,8 @@ public:
   enum class Type { Zombie,Chicken,Exploder,TallCreepyThing };
 
   Vector m_location;
-  const char* name;
   Vector speed;
+  const char* name;
   int health;
 
   Entity(Vector, Type);
