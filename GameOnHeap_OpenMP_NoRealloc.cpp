@@ -253,9 +253,16 @@ int main(int argc, char* argv[]) {
     game->updateChunks();
     end = high_resolution_clock::now();
 
+    auto duration = (double)(duration_cast<nanoseconds>(end-start).count() / 1000000.0);
+    printf("%f\n",duration);
+    if(duration < 16) {
+      this_thread::sleep_for(milliseconds((long)(16.0-duration)));
+    }
+    /*
     dur += (duration_cast<nanoseconds>(end-start).count() / 1000000.0);
     if ((++i)%1000 == 0) {
       printf("%f\n", dur/(double)i);
     }
+    */
   }
 }
