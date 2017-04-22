@@ -16,8 +16,8 @@
 #include <cmath>
 #include <string>
 #include <array>
-#include <matan/ThreadPool.hh>
-#include <matan/memory.hh>
+#include "ThreadPool.hh"
+#include "memory.hh"
 
 using namespace std;
 using namespace std::chrono;
